@@ -18,8 +18,7 @@ def main() -> None:
     args = p.parse_args()
 
     print(f"▸ 캡컷 에이전트  →  http://{args.host}:{args.port}")
-    uvicorn.run("agent.server:app", host=args.host, port=args.port, reload=args.reload,
-                limit_upload_size=500_000_000)  # 500MB 제한
+    uvicorn.run("agent.server:app", host=args.host, port=args.port, reload=args.reload)
 
 
 if __name__ == "__main__":

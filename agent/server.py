@@ -92,14 +92,18 @@ async def upload(file: UploadFile, mode: str = Form(None)):
     tmp = config.WORK_DIR / f"_tmp_{uuid4().hex}{ext}"
     h = hashlib.sha256()
     size = 0
+    max_size = 500 * 1024 * 1024  # 500MB
     with open(tmp, "wb") as out:
         while True:
             chunk = await file.read(1 << 20)
             if not chunk:
                 break
+            size += len(chunk)
+            if size > max_size:
+                tmp.unlink(missing_ok=True)
+                raise HTTPException(413, f"파일이 너무 커요 (최대 500MB, 현재 {size/(1024*1024):.1f}MB)")
             out.write(chunk)
             h.update(chunk)
-            size += len(chunk)
 
     if size == 0:
         tmp.unlink(missing_ok=True)
