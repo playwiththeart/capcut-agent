@@ -51,22 +51,27 @@ def transcribe(
         with open(cp, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    from faster_whisper import WhisperModel
-
-    # 모델 로드 (device는 자동 감지: cuda/mps/cpu)
-    whisper = WhisperModel(model, device="auto", compute_type="default")
-
-    segments, info = whisper.transcribe(
-        os.path.abspath(path),
-        language=language,
-        word_timestamps=True,
-    )
-
-    # 결과 변환 (faster-whisper의 generator를 list로 변환)
-    result = {
-        "language": info.language,
-        "segments": list(segments),
-    }
+    try:
+        import mlx_whisper  # 로컬 (Mac arm64)
+        result = mlx_whisper.transcribe(
+            os.path.abspath(path),
+            path_or_hf_repo=model,
+            language=language,
+            word_timestamps=True,
+            condition_on_previous_text=False,
+        )
+    except ImportError:
+        from faster_whisper import WhisperModel  # 클라우드 (Replit)
+        whisper = WhisperModel(model, device="auto", compute_type="default")
+        segments, info = whisper.transcribe(
+            os.path.abspath(path),
+            language=language,
+            word_timestamps=True,
+        )
+        result = {
+            "language": info.language,
+            "segments": list(segments),
+        }
 
     segments = []
     for seg in result.get("segments", []):

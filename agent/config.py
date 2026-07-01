@@ -51,8 +51,8 @@ MIN_KEEP_SEC = 0.20        # 이보다 짧은 보존 조각은 버림(미세 파
 DEFAULT_FPS = 30
 
 # --- ASR (대본 추출) ---
-# faster-whisper: 크로스플랫폼. large-v3 = 정확도 높음, base = 빠름
-ASR_MODEL = os.environ.get("ASR_MODEL", "large-v3")
+# 로컬: mlx-whisper (Mac arm64 빠름). 클라우드: faster-whisper
+ASR_MODEL = os.environ.get("ASR_MODEL", "mlx-community/whisper-large-v3-turbo")
 ASR_LANG = os.environ.get("ASR_LANG", "ko")
 
 # --- 자막 스타일 (캡컷 정규화 좌표) ---
