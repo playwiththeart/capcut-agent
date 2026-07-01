@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>캡컷 자동 편집 에이전트</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --card: #161616;
+    --border: #262626;
+    --border-hi: #383838;
+    --text: #ededed;
+    --muted: #8a8a8a;
+    --faint: #5a5a5a;
+    --green: #22c55e;
+    --green-glow: rgba(34, 197, 94, .35);
+    --green-dim: rgba(34, 197, 94, .12);
+    --red: #ef4444;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .wrap { width: 100%; max-width: 560px; padding: 64px 24px 96px; }
+
+  /* ── 헤더 ── */
+  header { margin-bottom: 28px; }
+  h1 {
+    font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+    margin: 0 0 4px; display: flex; align-items: center; gap: 8px;
+  }
+  h1 .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 8px var(--green-glow);
+  }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  /* ── 드롭존 ── */
+  .drop {
+    border: 1px dashed var(--border-hi);
+    border-radius: 10px;
+    background: var(--card);
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    user-select: none;
+  }
+  .drop:hover { border-color: var(--faint); }
+  .drop.drag {
+    border-color: var(--green);
+    background: var(--green-dim);
+  }
+  .drop .big { font-size: 14px; color: var(--text); margin-bottom: 6px; }
+  .drop .sub { font-size: 12px; color: var(--faint); font-family: var(--mono); }
+  .drop.busy { pointer-events: none; opacity: .55; }
+
+  /* ── 모드 토글 ── */
+  .modes { display: flex; gap: 6px; margin-bottom: 14px; }
+  .mode {
+    flex: 1; padding: 8px 6px; font-size: 12.5px; font-family: var(--sans);
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted); cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .mode:hover { border-color: var(--faint); }
+  .mode.active { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+
+  /* ── 파일 칩 ── */
+  .filebar {
+    display: none; align-items: center; gap: 10px;
+    margin-top: 18px; font-size: 13px; color: var(--muted);
+  }
+  .chip {
+    font-family: var(--mono); font-size: 12px;
+    background: #1e1e1e; border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 8px; color: var(--text);
+    max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .chip.cached { border-color: var(--green); color: var(--green); }
+
+  /* ── 스텝퍼 ── */
+  .steps { display: none; margin-top: 24px; }
+  .step {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 9px 0; font-size: 13px;
+  }
+  .step + .step { border-top: 1px solid var(--border); }
+  .step .ico {
+    position: relative; flex: 0 0 auto;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #333; transform: translateY(-1px);
+    transition: background .2s;
+  }
+  .step .lbl { flex: 0 0 auto; min-width: 96px; color: var(--muted); }
+  .step .det {
+    flex: 1; text-align: right; color: var(--faint);
+    font-family: var(--mono); font-size: 12px; word-break: keep-all;
+  }
+  .step[data-status="running"] .ico {
+    background: var(--green);
+    box-shadow: 0 0 0 0 var(--green-glow);
+    animation: pulse 1.2s ease-out infinite;
+  }
+  .step[data-status="running"] .lbl { color: var(--text); }
+  .step[data-status="done"] .ico {
+    background: var(--green); box-shadow: 0 0 6px var(--green-glow);
+  }
+  .step[data-status="done"] .lbl { color: var(--text); }
+  .step[data-status="failed"] .ico {
+    background: var(--red); box-shadow: none; animation: none;
+  }
+  .step[data-status="failed"] .lbl { color: var(--muted); }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 var(--green-glow); }
+    70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
+    100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+  }
+
+  /* ── 프리뷰 섹션 ── */
+  .preview { display: none; margin-top: 24px; }
+  .preview-video {
+    width: 100%; height: 280px; background: #000; border-radius: 8px;
+    margin-bottom: 14px; display: block;
+  }
+  video.preview-video {
+    object-fit: contain;
+  }
+  .timeline {
+    height: 36px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; margin-bottom: 12px; position: relative;
+  }
+  .timeline-bar {
+    height: 100%; display: flex; position: relative;
+  }
+  .timeline-segment {
+    flex: 1; height: 100%; border-right: 1px solid var(--border);
+    position: relative; cursor: pointer; transition: background .1s;
+  }
+  .timeline-segment:hover { background: rgba(255,255,255,.05); }
+  .timeline-segment.cut { background: rgba(239,68,68,.25); }
+  .timeline-segment.keep { background: rgba(34,197,94,.15); }
+  .timeline-time {
+    position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: var(--faint); font-family: var(--mono);
+    white-space: nowrap; pointer-events: none;
+  }
+  .timeline-info {
+    display: flex; gap: 8px; font-size: 12px; margin-bottom: 14px;
+    color: var(--muted); font-family: var(--mono);
+  }
+  .timeline-info .stat { display: flex; gap: 4px; }
+  .timeline-info .val { color: var(--text); }
+
+  /* ── 결과 카드 ── */
+  .result { display: none; margin-top: 26px; }
+  .result .head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px;
+  }
+  .result .res { color: var(--faint); font-family: var(--mono); font-size: 12px; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+  .grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+  }
+  .grid .cell { text-align: left; min-width: 0; }
+  .grid .num {
+    font-family: var(--mono); font-size: 18px; font-weight: 600;
+    color: var(--text); letter-spacing: -.02em; white-space: nowrap;
+  }
+  .grid .num.accent { color: var(--green); }
+  .grid .cap {
+    font-size: 11px; color: var(--faint); margin-top: 2px;
+    letter-spacing: .02em; word-break: keep-all; white-space: nowrap;
+  }
+  .verify {
+    font-size: 12.5px; color: var(--muted); display: flex; gap: 8px;
+  }
+  .verify .arrow { color: var(--green); }
+  .verify code {
+    font-family: var(--mono); color: var(--text);
+    background: #1e1e1e; border-radius: 4px; padding: 1px 5px;
+  }
+
+  /* ── 에러 ── */
+  .err {
+    display: none; margin-top: 20px; font-size: 13px;
+    color: var(--red); font-family: var(--mono);
+    border: 1px solid rgba(239,68,68,.3); border-radius: 8px;
+    padding: 12px 14px; background: rgba(239,68,68,.06);
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1><span class="dot"></span>캡컷 자동 편집 에이전트</h1>
+      <p>무음·잔말 자동 컷 · 한국어 자막 — 토킹 영상을 캡컷 드래프트로</p>
+      <p style="font-size: 11px; color: var(--faint); margin-top: 8px;">made by HYUN SEO</p>
+    </header>
+
+    <div class="modes" id="modes">
+      <button class="mode active" data-mode="">자동</button>
+      <button class="mode" data-mode="shorts">쇼츠 · 세로</button>
+      <button class="mode" data-mode="longform">롱폼 · 가로</button>
+    </div>
+
+    <div class="drop" id="drop">
+      <div class="big">영상을 끌어다 놓거나 클릭해 선택</div>
+      <div class="sub">mp4 · mov · m4v · avi · mkv · webm</div>
+    </div>
+    <input type="file" id="file" accept="video/*,.mp4,.mov,.m4v,.avi,.mkv,.webm" hidden />
+
+    <div class="filebar" id="filebar">
+      <span class="chip" id="filechip"></span>
+      <span id="filesize"></span>
+    </div>
+
+    <div class="steps" id="steps"></div>
+
+    <div class="preview" id="preview">
+      <div class="timeline-info" id="timeline-info"></div>
+      <div class="timeline" id="timeline"></div>
+      <video id="preview-video" class="preview-video" controls style="display: none;"></video>
+    </div>
+
+    <div class="result" id="result">
+      <div class="head">
+        <span class="chip" id="r-name"></span>
+        <span class="res" id="r-res"></span>
+      </div>
+      <hr />
+      <div class="grid">
+        <div class="cell"><div class="num accent" id="r-out"></div><div class="cap">결과 길이</div></div>
+        <div class="cell"><div class="num" id="r-removed"></div><div class="cap">제거됨</div></div>
+        <div class="cell"><div class="num" id="r-seg"></div><div class="cap">자막</div></div>
+      </div>
+      <hr />
+      <div class="verify">
+        <span class="arrow">→</span>
+        <span>캡컷을 재시작하고 <code id="r-open"></code> 드래프트를 열어 <b>직접 재생</b>해 검증하세요. 빌드 성공 ≠ 검증.</span>
+      </div>
+    </div>
+
+    <div class="err" id="err"></div>
+  </div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const drop = $("#drop"), fileInput = $("#file");
+const filebar = $("#filebar"), filechip = $("#filechip"), filesize = $("#filesize");
+const stepsEl = $("#steps"), previewEl = $("#preview"), resultEl = $("#result"), errEl = $("#err");
+const timelineEl = $("#timeline"), timelineInfoEl = $("#timeline-info"), previewVideoEl = $("#preview-video");
+let es = null;
+let selectedMode = "";
+let currentJobId = null;
+document.querySelectorAll(".mode").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".mode").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  selectedMode = b.dataset.mode;
+}));
+
+const fmtSize = (b) => b > 1<<20 ? (b/(1<<20)).toFixed(1)+" MB" : (b/1024).toFixed(0)+" KB";
+
+// ── 드래그/드롭 ──
+["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add("drag");
+}));
+["dragleave","dragend"].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove("drag");
+}));
+drop.addEventListener("drop", e => {
+  e.preventDefault(); drop.classList.remove("drag");
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+drop.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+// ── 처리 ──
+async function handleFile(file) {
+  reset();
+  filechip.textContent = file.name;
+  filesize.textContent = fmtSize(file.size);
+  filebar.style.display = "flex";
+  drop.classList.add("busy");
+
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (selectedMode) fd.append("mode", selectedMode);
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.detail || ("업로드 실패 ("+r.status+")"));
+    }
+    const job = await r.json();
+    if (job.cached) filechip.classList.add("cached");
+    startStream(job.job_id);
+  } catch (e) {
+    showErr(e.message);
+    drop.classList.remove("busy");
+  }
+}
+
+function startStream(jobId) {
+  currentJobId = jobId;
+  es = new EventSource("/api/stream/" + jobId);
+
+  es.addEventListener("stages", e => buildSteps(JSON.parse(e.data)));
+  es.addEventListener("stage",  e => updateStep(JSON.parse(e.data)));
+  es.addEventListener("preview", e => renderPreview(JSON.parse(e.data)));
+  es.addEventListener("result", e => { renderResult(JSON.parse(e.data)); finish(); });
+  es.addEventListener("fail",   e => {
+    const running = stepsEl.querySelector('.step[data-status="running"]');
+    if (running) running.dataset.status = "failed";
+    showErr(JSON.parse(e.data).message); finish();
+  });
+  es.onerror = () => {
+    if (es && es.readyState !== EventSource.CLOSED && !resultEl.style.display) {
+      showErr("스트림 연결이 끊겼습니다.");
+      finish();
+    }
+  };
+}
+
+function finish() { if (es) es.close(); es = null; drop.classList.remove("busy"); }
+
+// ── 스텝퍼 렌더 ──
+function buildSteps(stages) {
+  stepsEl.innerHTML = "";
+  for (const s of stages) {
+    const row = document.createElement("div");
+    row.className = "step";
+    row.dataset.id = s.id;
+    row.dataset.status = "idle";
+    row.innerHTML = `<span class="ico"></span><span class="lbl">${s.label}</span><span class="det"></span>`;
+    stepsEl.appendChild(row);
+  }
+  stepsEl.style.display = "block";
+}
+function updateStep(s) {
+  const row = stepsEl.querySelector(`.step[data-id="${s.id}"]`);
+  if (!row) return;
+  row.dataset.status = s.status;
+  if (s.detail) row.querySelector(".det").textContent = s.detail;
+}
+
+const fmt = (s) => {
+  const m = Math.floor(s / 60);
+  const sec = (s % 60).toFixed(1);
+  return `${m}:${String(Math.floor(s%60)).padStart(2, '0')}`;
+};
+
+// ── 프리뷰 렌더 ──
+function renderPreview(data) {
+  const { duration, cuts, keeps } = data;
+
+  // 타임라인 정보
+  const cutTime = cuts.reduce((a, [s, e]) => a + (e - s), 0);
+  const keepTime = keeps.reduce((a, [s, e]) => a + (e - s), 0);
+  timelineInfoEl.innerHTML = `
+    <div class="stat"><span>전체:</span> <span class="val">${fmt(duration)}</span></div>
+    <div class="stat"><span>보존:</span> <span class="val">${fmt(keepTime)}</span></div>
+    <div class="stat"><span>컷:</span> <span class="val">${fmt(cutTime)}</span> (${Math.round(cutTime/duration*100)}%)</div>
+  `;
+
+  // 비디오 설정
+  previewVideoEl.src = `/api/video/${currentJobId}`;
+  previewVideoEl.style.display = "block";
+
+  // 타임라인 시각화 (1000 픽셀 = duration)
+  const pxPerSec = 1000 / duration;
+  let html = "";
+
+  // 모든 구간(컷 + 보존)을 시간순으로 정렬
+  const allRanges = [...cuts.map(r => ({...r, type: "cut"})), ...keeps.map(r => ({...r, type: "keep"}))].sort((a, b) => a[0] - b[0]);
+
+  for (const [s, e] of allRanges) {
+    const w = (e - s) * pxPerSec;
+    const type = cuts.some(([cs, ce]) => cs === s && ce === e) ? "cut" : "keep";
+    const time = `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2, '0')}`;
+    html += `<div class="timeline-segment ${type}" style="width: ${w}px;" title="${time}"></div>`;
+  }
+  timelineEl.innerHTML = `<div class="timeline-bar">${html}</div>`;
+
+  previewEl.style.display = "block";
+}
+
+// ── 결과 카드 ──
+function renderResult(r) {
+  $("#r-name").textContent = r.draft_name;
+  $("#r-res").textContent = r.resolution + (r.mode ? "  ·  " + (r.mode === "shorts" ? "쇼츠" : "롱폼") : "");
+  $("#r-out").textContent = r.output;
+  $("#r-removed").textContent = r.removed_pct + "%";
+  $("#r-seg").textContent = r.subtitles;
+  $("#r-open").textContent = r.draft_name;
+  resultEl.style.display = "block";
+}
+
+// ── 상태 ──
+function showErr(msg) { errEl.textContent = "⚠ " + msg; errEl.style.display = "block"; }
+function reset() {
+  if (es) { es.close(); es = null; }
+  currentJobId = null;
+  stepsEl.style.display = "none"; stepsEl.innerHTML = "";
+  previewEl.style.display = "none";
+  resultEl.style.display = "none";
+  errEl.style.display = "none"; errEl.textContent = "";
+  filechip.classList.remove("cached");
+}
+</script>
+</body>
+</html>
