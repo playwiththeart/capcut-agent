@@ -164,9 +164,9 @@ async def stream(job_id: str):
             transcript = None
             try:
                 async with ASR_LOCK:
-                    cut_audio = await asyncio.to_thread(asr.build_cut_audio, job["path"], keeps)
-                    transcript = await asyncio.to_thread(asr.transcribe, cut_audio)
-            except Exception:
+                    transcript = await asyncio.to_thread(asr.transcribe, job["path"])
+            except Exception as e:
+                print(f"⚠️ ASR 실패: {type(e).__name__}: {e}")
                 transcript = None
 
             # NG 구간 계산 (ASR이 있으면 NG도 감지, 없으면 무음만)
